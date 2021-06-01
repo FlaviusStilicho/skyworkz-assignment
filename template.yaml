@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  skyworkz-assignment
+  Sample SAM Template for skyworkz-assignment
+
+Globals:
+  Function:
+    Timeout: 20
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'content-type'"
+      AllowOrigin: "'*'"
+      AllowCredentials: "'*'"
+
+Parameters:
+  DefaultRootObject:
+    Description: 'The default path for the index document.'
+    Type: String
+    Default: '/index.html'
+  ErrorPagePath:
+    Description: 'The path of the error page for the website.'
+    Type: String
+    Default: '/error.html'
+
+# turn into variable?
+#Parameters:
+#  RootDomainName:
+#    Description: Domain name for the website
+#    Type: String
+#Mappings:
+#  RegionMap:
+#    us-east-1:
+#      S3hostedzoneID: Z3AQBSTGFYJSTF
+#      websiteendpoint: s3-website-us-east-1.amazonaws.com
+
+Resources:
+  ### Lambda ###
+  AddNewsitemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/addNewsitem/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Policies:
+       - AWSLambdaDynamoDBExecutionRole
+       - AmazonDynamoDBFullAccess
+      Environment:
+        Variables:
+          DDB_TABLE: !Ref NewsitemTable
+      Events:
+        AddNewsitem:
+          Type: Api
+          Properties:
+            Path: /newsitem
+            Method: post
+  GetNewsitemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/getNewsitems/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Policies:
+        - AWSLambdaDynamoDBExecutionRole
+        - AmazonDynamoDBFullAccess
+      Environment:
+        Variables:
+          DDB_TABLE: !Ref NewsitemTable
+      Events:
+        GetNewsitems:
+          Type: Api
+          Properties:
+            Path: /news
+            Method: get
+
+  ### WAF ###
+  WAF:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: WAFMetric
+      Rules:
+        - Name: RateLimitingRule
+          Priority: 0
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: WAFRateLimitingMetric
+          Statement:
+            RateBasedStatement:
+              Limit: 100
+              AggregateKeyType: IP
+  WAFAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/${ServerlessRestApi}/stages/${ServerlessRestApi.Stage}'
+      WebACLArn: !GetAtt WAF.Arn
+
+  ### DynamoDB table ###
+  NewsitemTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: newsitems
+      AttributeDefinitions:
+        - AttributeName: title
+          AttributeType: S
+      KeySchema:
+        - AttributeName: title
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  ### static website ###
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: 'www.my-awesome-test-site.nl'
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    #DependsOn:
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          - Action: 's3:GetObject'
+            Effect: Allow
+            Resource: !Sub 'arn:aws:s3:::${S3Bucket}/*'
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref S3Bucket
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+
+        DefaultRootObject: !Ref DefaultRootObject
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - DomainName: !GetAtt S3Bucket.DomainName
+            Id: s3origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
+        PriceClass: 'PriceClass_All'
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          DefaultTTL: 3600 # in seconds
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            QueryString: false
+          MaxTTL: 86400 # in seconds
+          MinTTL: 60 # in seconds
+          TargetOriginId: s3origin
+          ViewerProtocolPolicy: 'allow-all'
+
+Outputs:
+  SkyworkzApi:
+    Description: "API Gateway endpoint URL for Dev stage for Hello World function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Skyworkz-assignment/Dev/"
+#  WebsiteURL:
+#    Value: !GetAtt RootBucket.WebsiteURL
+#    Description: URL for website hosted on S3
