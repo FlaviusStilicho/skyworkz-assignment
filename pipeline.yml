@@ -1,0 +1,444 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: >-
+  This serverless app sets up an AWS CodePipeline Pipeline as a CD solution for a GitHub-based SAM project. Once setup, every time the specified GitHub repository branch is updated, the change will flow through the CodePipeline pipeline.
+
+Outputs:
+  ArtifactsBucketArn:
+    Value: !GetAtt Artifacts.Arn
+  ArtifactsBucketName:
+    Value: !Ref Artifacts
+  PipelineName:
+    Value: !Ref Pipeline
+  PipelineVersion:
+    Value: !GetAtt Pipeline.Version
+
+Parameters:
+  ComputeType:
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+    Default: BUILD_GENERAL1_SMALL
+    Description: AWS CodeBuild project compute type.
+    Type: String
+  EnvironmentType:
+    AllowedValues:
+      - LINUX_CONTAINER
+      - WINDOWS_CONTAINER
+    Default: LINUX_CONTAINER
+    Description: Environment type used by AWS CodeBuild. See the documentation for details (https://docs.aws.amazon.com/codebuild/latest/userguide/create-project.html#create-project-cli).
+    Type: String
+  SourceCodeProvider:
+    Type: String
+    Description: Location of your source code repository
+    Default: GitHub
+    AllowedValues:
+      - GitHub
+      - CodeCommit
+  GitHubOAuthToken:
+    Description: OAuth token used by AWS CodePipeline to connect to GitHub
+    NoEcho: true
+    Type: String
+    Default: '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'
+  GitHubOwner:
+    Description: GitHub username owning the repo
+    Type: String
+    Default: 'FlaviusStilicho'
+  GitHubRepo:
+    Description: GitHub repo name
+    Type: String
+    Default: 'skyworkz-assignment'
+  GitHubBranch:
+    Description: GitHub repo branch name. It defaults to master if not specified.
+    Type: String
+    Default: master
+  CodeCommitRepo:
+    Type: String
+    Description: CodeCommit repository name, only specify if you chose CodeCommit in SourceCodeProvider
+    Default: ''
+  CodeCommitBranch:
+    Type: String
+    Description: CodeCommit repository branch name, only specify if you chose CodeCommit in SourceCodeProvider.
+    Default: master
+  DeployParameterOverrides:
+    Description: Parameter overrides for the deploy stage
+    Type: String
+    Default: '{}'
+  DeployStackName:
+    Description: The stack name for the deploy stage
+    Type: String
+    Default: 'skyworkz-deploy'
+  IntegTestRoleName:
+    Description: >-
+      The IAM role name to deploy a test stack and run integration tests. This role needs to be configured
+      to allow codebuild.amazonaws.com and cloudformation.amazonaws.com to assume it. Test stage will not
+      be added if not specified.
+    Type: String
+    Default: ''
+  BuildSpecFilePath:
+    Description: >-
+      Relative BuildSpec file path for build stage. For more information, see https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html
+    Type: String
+    Default: 'buildspec.yaml'
+  IntegTestBuildSpecFilePath:
+    Description: >-
+      Relative BuildSpec file path for test stage. For more information, see https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html
+    Type: String
+    Default: 'buildspec-integ-test.yaml'
+  PublishToSAR:
+    Description: Whether to publish the application to AWS Serverless Application Repository
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: false
+  AppName:
+    Description: Name of the deployed application
+    Type: String
+    Default: 'Skyworkz-assignment'
+
+Conditions:
+  HasTestStage:
+    !Not [!Equals [!Ref IntegTestRoleName, '']]
+  HasPublishStage:
+    !Equals [!Ref PublishToSAR, 'true']
+  UseCodeCommit:
+    !Equals [!Ref SourceCodeProvider, 'CodeCommit']
+  UseGitHub:
+    !Equals [!Ref SourceCodeProvider, 'GitHub']
+
+Rules:
+  ValidateGitHub:
+    RuleCondition: !Equals [!Ref SourceCodeProvider, 'GitHub']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref GitHubOwner, '']]
+        AssertDescription: "GitHubOwner must be specified when SourceCodeProvider is GitHub"
+      - Assert: !Not [!Equals [!Ref GitHubRepo, '']]
+        AssertDescription: "GitHubRepo must be specified when SourceCodeProvider is GitHub"
+      - Assert: !Not [!Equals [!Ref GitHubOAuthToken, '']]
+        AssertDescription: "GitHubOAuthToken must be specified when SourceCodeProvider is GitHub"
+      - Assert: !Not [!Equals [!Ref GitHubBranch, '']]
+        AssertDescription: "GitHubBranch must be specified when SourceCodeProvider is GitHub"
+  ValidateCodeCommit:
+    RuleCondition: !Equals [!Ref SourceCodeProvider, 'CodeCommit']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref CodeCommitRepo, '']]
+        AssertDescription: "CodeCommitRepo must be specified when SourceCodeProvider is CodeCommit"
+      - Assert: !Not [!Equals [!Ref CodeCommitBranch, '']]
+        AssertDescription: "CodeCommitBranch must be specified when SourceCodeProvider is CodeCommit"
+
+Resources:
+  Artifacts:
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 30
+            Status: Enabled
+    Type: AWS::S3::Bucket
+  ArtifactsPolicy:
+    Condition: HasPublishStage
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket:
+        Ref: Artifacts
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Principal:
+              Service:
+                - 'serverlessrepo.amazonaws.com'
+            Resource:
+              !Sub '${Artifacts.Arn}/*'
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Location: !Ref Artifacts
+        Type: S3
+      RoleArn: !GetAtt PipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: "1"
+              Configuration:
+                Owner: !Ref GitHubOwner
+                OAuthToken: !Ref GitHubOAuthToken
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: SourceArtifact
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref BuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+        - Name: Deploy
+          Actions:
+            - Name: CreateChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: BuildArtifact
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                Capabilities: CAPABILITY_IAM,CAPABILITY_AUTO_EXPAND
+                ParameterOverrides: !Ref DeployParameterOverrides
+                RoleArn: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CloudFormationdDeployRole}
+                StackName: !Ref DeployStackName
+                TemplatePath: "BuildArtifact::packaged-template.yaml"
+                ChangeSetName: !Sub a-${DeployStackName}-Deploy
+              RunOrder: 1
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Ref DeployStackName
+                ChangeSetName: !Sub a-${DeployStackName}-Deploy
+              RunOrder: 2
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub "Used by CodePipeline. Created by CloudFormation ${AWS::StackId}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: s3-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:DeleteObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${Artifacts}/*
+              - Effect: Allow
+                Action:
+                  - "s3:ListBucket"
+                  - "s3:GetBucketPolicy"
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${Artifacts}
+        - PolicyName: codebuild-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "codebuild:StartBuild"
+                  - "codebuild:BatchGetBuilds"
+                Resource:
+                  - !GetAtt BuildProject.Arn
+        - PolicyName: deploy-cloudformation-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "cloudformation:DescribeStacks"
+                  - "cloudformation:CreateChangeSet"
+                  - "cloudformation:ExecuteChangeSet"
+                  - "cloudformation:DescribeChangeSet"
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${DeployStackName}/*
+        - PolicyName: deploy-iam-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${CloudFormationdDeployRole}
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      ServiceRole: !GetAtt BuildProjectRole.Arn
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Ref BuildSpecFilePath
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: !Ref ComputeType
+        Image: 'aws/codebuild/standard:2.0'
+        Type: !Ref EnvironmentType
+        EnvironmentVariables:
+          - Name: PACKAGE_BUCKET
+            Value: !Ref Artifacts
+  GitHubWebhook:
+    Type: 'AWS::CodePipeline::Webhook'
+    Condition: UseGitHub
+    Properties:
+      AuthenticationConfiguration:
+        SecretToken: !Ref GitHubOAuthToken
+      Filters:
+        - JsonPath: "$.ref"
+          MatchEquals: refs/heads/{Branch}
+      Authentication: GITHUB_HMAC
+      TargetPipeline: !Ref Pipeline
+      TargetAction: GitHubSource
+      TargetPipelineVersion: !GetAtt Pipeline.Version
+      RegisterWithThirdParty: true
+  IntegrationTestsProject:
+    Condition: HasTestStage
+    Type: AWS::CodeBuild::Project
+    Properties:
+      ServiceRole: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${IntegTestRoleName}
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Ref IntegTestBuildSpecFilePath
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: !Ref ComputeType
+        Image: 'aws/codebuild/standard:2.0'
+        Type: !Ref EnvironmentType
+        EnvironmentVariables:
+          - Name: PACKAGE_BUCKET
+            Value: !Ref Artifacts
+  CodeBuildPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub codebuild-access-${AWS::StackName}
+      Roles:
+        - !Ref BuildProjectRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+          - Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Effect: Allow
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${Artifacts}/*
+          - Action:
+              - s3:ListBucket
+            Effect: Allow
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${Artifacts}
+  BuildProjectRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub "Used in CodeBuild project. Created by CloudFormation ${AWS::StackId}"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+        Version: '2012-10-17'
+      Path: /service-role/
+  DeployStagePolicy:
+    #    Condition: HasDeployStage
+    Type: AWS::IAM::Policy
+    DependsOn: CloudFormationdDeployRole
+    Properties:
+      PolicyName: !Sub deploy-stage-access-${AWS::StackName}
+      Roles:
+        - !Ref CloudFormationdDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${Artifacts}/*
+  CloudFormationdDeployRole:
+    Description: Creating service role in IAM for AWS CloudFormation
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-cloudformation-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [cloudformation.amazonaws.com]
+            Action: sts:AssumeRole
+      Path: /
+  CloudFormationRolePolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: CloudFormationdDeployRole
+    Description: Setting IAM policy for the service role for AWS CloudFormation
+    Properties:
+      PolicyName: CloudFormationRolePolicy
+      PolicyDocument:
+        Statement:
+          - Action: ["s3:GetObject", "s3:GetObjectVersion", "s3:GetBucketVersioning"]
+            Resource: "*"
+            Effect: Allow
+          - Action: ["s3:PutObject"]
+            Resource: ["arn:aws:s3:::codepipeline*"]
+            Effect: Allow
+          - Action: ["lambda:*"]
+            Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
+            Effect: Allow
+          - Action: ["apigateway:*"]
+            Resource: !Sub "arn:aws:apigateway:${AWS::Region}::*"
+            Effect: Allow
+          - Action: ["iam:GetRole", "iam:CreateRole", "iam:DeleteRole"]
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-*"
+            Effect: Allow
+          - Action: ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-*"
+            Effect: Allow
+          - Action: ["iam:PassRole"]
+            Resource: ["*"]
+            Effect: Allow
+          - Action: ["cloudformation:CreateChangeSet"]
+            Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31"
+            Effect: Allow
+      Roles: [!Ref CloudFormationdDeployRole]
+
+  SARPublishApp:
+    Condition: HasPublishStage
+    Type: 'AWS::Serverless::Application'
+    Properties:
+      Location:
+        ApplicationId: 'arn:aws:serverlessrepo:us-east-1:077246666028:applications/aws-serverless-codepipeline-serverlessrepo-publish'
+        SemanticVersion: 1.0.1

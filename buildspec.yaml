@@ -2,8 +2,7 @@ version: 0.2
 phases:
   build:
     commands:
-      - aws cloudformation package --template-file template.yaml --s3-bucket alex-pipeline-bucket --output-template-file deployTemplate.yaml
-
+      - aws cloudformation package --template-file template.yaml --output-template-file deployTemplate.yaml
 artifacts:
   files:
     - deployTemplate.yaml
