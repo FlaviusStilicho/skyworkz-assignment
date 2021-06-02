@@ -2,7 +2,7 @@ version: 0.2
 phases:
   build:
     commands:
-      - aws cloudformation package --template-file template.yaml --s3-bucket pipeline-artifacts-1cf8l1j5qcim3 --output-template-file packaged-template.yaml
+      - aws cloudformation package --template-file template.yaml --s3-bucket skyworkz-pipeline-artifacts-1hiyb0s0jv9vf --output-template-file packaged-template.yaml
 artifacts:
   files:
     - packaged-template.yaml
