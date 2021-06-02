@@ -40,7 +40,7 @@ Parameters:
     Description: OAuth token used by AWS CodePipeline to connect to GitHub
     NoEcho: true
     Type: String
-    Default: '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'
+    Default: ''
   GitHubOwner:
     Description: GitHub username owning the repo
     Type: String
