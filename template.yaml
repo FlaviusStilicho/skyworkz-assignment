@@ -23,6 +23,10 @@ Parameters:
     Description: 'The path of the error page for the website.'
     Type: String
     Default: '/error.html'
+  DomainName:
+    Description: 'Domain name for the website.'
+    Type: String
+    Default: 'account-0.aws-tests.skyworkz.nl'
 
 # turn into variable?
 #Parameters:
@@ -121,7 +125,7 @@ Resources:
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: 'www.my-awesome-test-site.nl'
+      BucketName: DomainName
       AccessControl: PublicRead
       WebsiteConfiguration:
         IndexDocument: index.html
@@ -147,12 +151,14 @@ Resources:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
-
+        Aliases:
+          - DomainName
+          - !Sub 'www.${DomainName}'
         DefaultRootObject: !Ref DefaultRootObject
         Enabled: true
         HttpVersion: http2
         Origins:
-          - DomainName: !GetAtt S3Bucket.DomainName
+          - DomainName: DomainName
             Id: s3origin
             S3OriginConfig:
               OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
