@@ -28,17 +28,6 @@ Parameters:
     Type: String
     Default: 'account-0.aws-tests.skyworkz.nl'
 
-# turn into variable?
-#Parameters:
-#  RootDomainName:
-#    Description: Domain name for the website
-#    Type: String
-#Mappings:
-#  RegionMap:
-#    us-east-1:
-#      S3hostedzoneID: Z3AQBSTGFYJSTF
-#      websiteendpoint: s3-website-us-east-1.amazonaws.com
-
 Resources:
   ### Lambda ###
   AddNewsitemFunction:
@@ -132,7 +121,6 @@ Resources:
         ErrorDocument: error.html
   BucketPolicy:
     Type: AWS::S3::BucketPolicy
-    #DependsOn:
     Properties:
       Bucket: !Ref S3Bucket
       PolicyDocument:
@@ -187,6 +175,3 @@ Outputs:
   SkyworkzApi:
     Description: "API Gateway endpoint URL for Dev stage for Hello World function"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Skyworkz-assignment/Dev/"
-#  WebsiteURL:
-#    Value: !GetAtt RootBucket.WebsiteURL
-#    Description: URL for website hosted on S3

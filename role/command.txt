@@ -1,2 +1,0 @@
-aws iam create-role --role-name CodeDeployServiceRole --assume-role-policy-document file://CodeDeployTrust.json
-aws iam attach-role-policy --role-name CodeDeployServiceRole --policy-arn arn:aws:iam::aws:policy/service-role/AWSCodeDeployRoleForLambda

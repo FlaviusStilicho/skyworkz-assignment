@@ -40,7 +40,7 @@ Parameters:
     Description: OAuth token used by AWS CodePipeline to connect to GitHub
     NoEcho: true
     Type: String
-    Default: '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'
+    Default: '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'
   GitHubOwner:
     Description: GitHub username owning the repo
     Type: String
@@ -156,6 +156,7 @@ Resources:
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
+      Name: 'Skyworkz-assignment-pipeline'
       ArtifactStore:
         Location: !Ref Artifacts
         Type: S3
@@ -171,7 +172,7 @@ Resources:
                 Version: "1"
               Configuration:
                 Owner: !Ref GitHubOwner
-                OAuthToken: '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'
+                OAuthToken: !Ref GitHubOAuthToken
                 Repo: !Ref GitHubRepo
                 Branch: !Ref GitHubBranch
                 PollForSourceChanges: false
@@ -419,6 +420,9 @@ Resources:
             Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*"
             Effect: Allow
           - Action: ["apigateway:*"]
+            Resource: !Sub "arn:aws:apigateway:${AWS::Region}::*"
+            Effect: Allow
+          - Action: ["dynamodb:*"]
             Resource: !Sub "arn:aws:apigateway:${AWS::Region}::*"
             Effect: Allow
           - Action: ["iam:GetRole", "iam:CreateRole", "iam:DeleteRole"]
