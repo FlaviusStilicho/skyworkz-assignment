@@ -7,12 +7,12 @@ Description: >
 Globals:
   Function:
     Timeout: 20
-  Api:
-    Cors:
-      AllowMethods: "'GET,POST,OPTIONS'"
-      AllowHeaders: "'content-type'"
-      AllowOrigin: "'*'"
-      AllowCredentials: "'*'"
+#  Api:
+#    Cors:
+#      AllowMethods: "'GET,POST,OPTIONS'"
+#      AllowHeaders: "'content-type'"
+#      AllowOrigin: "'*'"
+#      AllowCredentials: "'*'"
 
 Parameters:
   DefaultRootObject:
