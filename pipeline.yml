@@ -40,7 +40,7 @@ Parameters:
     Description: OAuth token used by AWS CodePipeline to connect to GitHub
     NoEcho: true
     Type: String
-    Default: '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'
+    Default: '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'
   GitHubOwner:
     Description: GitHub username owning the repo
     Type: String
@@ -171,7 +171,7 @@ Resources:
                 Version: "1"
               Configuration:
                 Owner: !Ref GitHubOwner
-                OAuthToken: !Ref GitHubOAuthToken
+                OAuthToken: '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'
                 Repo: !Ref GitHubRepo
                 Branch: !Ref GitHubBranch
                 PollForSourceChanges: false
